@@ -1,0 +1,185 @@
+##Dealing with Missing Data
+
+```{r}
+options(tidyverse.quiet = TRUE)
+library(titanic)
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(naniar) #visualizing missingness
+library(skimr) #alternative way to view dataset summaries
+library(UpSetR) #visualizing missingness
+```
+
+Read in dataset   
+```{r}
+titanic = titanic::titanic_train
+```
+
+Structure and summary
+```{r}
+str(titanic)
+summary(titanic)
+skim(titanic)
+```
+
+Factor conversion, recoding, and variable selection.    
+```{r}
+titanic = titanic %>% mutate(Survived = as_factor(Survived)) %>% 
+  mutate(Survived = fct_recode(Survived, "No" = "0", "Yes" = "1" )) %>%
+  mutate(Pclass = as_factor(Pclass)) %>% mutate(Sex = as.factor(Sex)) %>%
+  mutate(Embarked = as_factor(Embarked)) %>% 
+  mutate(Embarked = fct_recode(Embarked,"Unknown"="","Cherbourg"="C","Southampton"="S","Queenstown"="Q")) %>% 
+  select(Survived, Pclass, Sex, Age, SibSp, Parch, Fare, Embarked)
+
+str(titanic)
+skim(titanic)
+```
+What about Fare? There are some passengers in the dataset with a Fare of 0. How many and what does this mean?  
+```{r}
+titanic %>% filter(Fare == 0)
+```
+Looks like 15 passengers with a Fare of zero. Do we need to address this?  
+
+I'm tempted to replace the zeroes with "NA". Let's see how we'd do that. Not actually going to run the code.   
+```{r}
+#titanic = titanic %>% mutate(Fare = na_if(Fare, "0"))
+```
+
+Visualizing missingness. There are MANY ways to look at missingness in R. Typically we are interested in proportion of missingness by variable, by case (row), and by factor.  
+
+Here's a helpful link: https://cran.r-project.org/web/packages/naniar/vignettes/naniar-visualisation.html. NOTE: If you have lots of variables and/or rows, these plots can quickly become cluttered.  
+
+Simple view of missingess  
+```{r}
+gg_miss_var(titanic)
+```
+
+By case  
+```{r}
+gg_miss_case(titanic) #x axis is number of missing values in each row (case)
+```
+
+By a factor (here we choose the variable Survived)  
+```{r}
+gg_miss_fct(x = titanic, fct = Survived)
+```
+
+Looking at missingness by variable and combinations of missingness using "aggr" from VIM package.  
+```{r}
+vim_plot = aggr(titanic, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+#the cex.axis reduces size of text on x-axis so labels fit better
+```
+
+A view of missingness by variable and row.  
+```{r}
+vis_miss(titanic) #from the naniar package
+```
+
+So how do we do handle our missing data in this dataset? 
+
+One idea: Column-wise deletion of the "Age" variable (creating a new data frame with this variable removed).  
+```{r}
+titanic_coldel = titanic %>% select(-Age) 
+vim_plot = aggr(titanic_coldel, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+skim(titanic_coldel)
+```
+
+Second idea: Row-wise deletion of any row with at least one NA:
+```{r}
+titanic_rowdel = titanic %>% drop_na() 
+#alternatively can specify which variable(s) on which to do the drop_na
+#drop_na(Age)
+skim(titanic_rowdel)
+```
+Doing this discards 177 rows of data.  
+
+Finally, imputation. Let's use the "mice" package to do imputation.  
+```{r}
+set.seed(1234) #sets seed for random number generator
+imp_age = mice(titanic, m=5, method='pmm', printFlag=FALSE)
+#m is the number of imputations, 5 is a reasonable value as a default
+#pmm is "predictive mean matching" = imputation method for numeric data
+#printFlag reduces amount of output
+summary(imp_age)
+```
+
+```{r}
+densityplot(imp_age, ~Age) #red imputed, blue original
+```
+Merge the imputed values into our titanic data frame  
+```{r}
+titanic_complete = complete(imp_age) 
+summary(titanic_complete)
+```
+Now we can continue with our modeling. 
+
+Looking at a different dataset.  
+```{r}
+heart = read_csv("heart.csv")
+```
+
+```{r}
+str(heart)
+summary(heart)
+skim(heart)
+```
+
+```{r}
+#factor conversions
+heart = heart %>% mutate(male = as_factor(male)) %>%
+  mutate(education = as_factor(education)) %>%
+  mutate(currentSmoker = as_factor(currentSmoker)) %>%
+  mutate(BPMeds = as_factor(BPMeds)) %>%
+  mutate(prevalentStroke = as_factor(prevalentStroke)) %>%
+  mutate(prevalentHyp = as_factor(prevalentHyp)) %>%
+  mutate(diabetes = as_factor(diabetes)) %>%
+  mutate(TenYearCHD = as_factor(TenYearCHD))
+
+#recode variables
+heart = heart %>% mutate(male = fct_recode(male, "Yes" = "1","No"="0")) %>% 
+  mutate(currentSmoker = fct_recode(currentSmoker, "YesSmokes"="1","NoSmokes"="0")) %>%
+  mutate(BPMeds = fct_recode(BPMeds, "YesBPMeds"="1","NoBPMeds"="0")) %>%
+  mutate(prevalentStroke = fct_recode(prevalentStroke, "YesStroke"="1","NoStroke"="0")) %>%
+  mutate(prevalentHyp = fct_recode(prevalentHyp, "YesHyp"="1","NoHyp"="0")) %>%
+  mutate(diabetes = fct_recode(diabetes, "YesDiabetes"="1","NoDiabetes"="0")) %>%
+  mutate(TenYearCHD = fct_recode(TenYearCHD, "YesTenYearCHD"="1","NoTenYearCHD"="0")) %>%
+  mutate(education = fct_recode(education, "Some HS"="1","HS"="2","Some College"="3","College or More"="4"))
+```
+
+```{r}
+skim(heart)
+```
+Visualization
+```{r}
+gg_miss_var(heart)
+```
+By case  
+```{r}
+gg_miss_case(heart) #x axis is number of missing values in each row (case)
+```
+By a factor  
+```{r}
+gg_miss_fct(x = heart, fct = TenYearCHD)
+```
+
+A view of patterns of missingness  
+```{r}
+gg_miss_upset(heart, nsets = 7) #from the UpSetR package, must have at least two variables with missingness to use this plot
+#note nsets = 7 refers to then number of variables to show in the plot. I chose 7 as there are 7 variables with missingness
+```
+Not a lot (barely any) patterned missigness. 
+
+```{r}
+vim_plot = aggr(heart, numbers = TRUE, prop = c(TRUE, FALSE),cex.axis=.7)
+#the cex.axis reduces size of text on x-axis so labels fit better
+```
+A view of missingness by variable and row.  
+```{r}
+vis_miss(heart) #from the naniar package
+```
+So what's our strategy here? It's a bit of "artistry" as there is no definitive "right" way. With the exception of "education" and "BPMeds" the missingness is confined to numeric variables. Numeric variables tend to make good candidates for imputation (although we can impute categorical variables too). 
+
+A question: Should we impute health data at all? My temptation is to do row-wise deletion and call it a day. That would leave us with 3,658 rows.  
+

@@ -1,0 +1,274 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+library(readr)
+library(tidyverse)
+library(skimr)
+```
+
+```{r}
+train <- read_csv("train.csv")
+```
+
+```{r}
+#str(train)
+#summary(train)
+#skim(train)
+```
+
+```{r}
+train = train %>% mutate(attribute_0 = as_factor(attribute_0)) %>%
+  mutate(attribute_1 = as_factor(attribute_1)) 
+
+```
+
+```{r}
+ggplot(train, aes(x = attribute_2, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+```
+
+```{r}
+ggplot(train, aes(x=attribute_2, fill = failure)) + geom_bar() + theme_bw()
+```
+
+```{r}
+t1 = table(train$failure, train$attribute_2) #create a table object
+prop.table(t1, margin = 2 ) #crosstab with proportions
+```
+
+```{r}
+ggplot(train, aes(x = attribute_3, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=attribute_3, fill = failure)) + geom_bar() + theme_bw()
+
+t2 = table(train$failure, train$attribute_3) #create a table object
+prop.table(t2, margin = 2 ) #crosstab with proportions
+```
+```{r}
+ggplot(train, aes(x = measurement_0, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_0, fill = failure)) + geom_bar() + theme_bw()
+
+t3 = table(train$failure, train$measurement_0) #create a table object
+prop.table(t3, margin = 2 ) #crosstab with proportions
+```
+```{r}
+ggplot(train, aes(x = measurement_1, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_1, fill = failure)) + geom_bar() + theme_bw()
+
+t4 = table(train$failure, train$measurement_1) #create a table object
+prop.table(t4, margin = 2 ) #crosstab with proportions
+```
+
+```{r}
+ggplot(train, aes(x = measurement_2, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_2, fill = failure)) + geom_bar() + theme_bw()
+
+t5 = table(train$failure, train$measurement_2) #create a table object
+prop.table(t5, margin = 2 ) #crosstab with proportions
+```
+
+```{r}
+library(mice)
+set.seed(1234) #sets seed for random number generator
+imp_measurement_3 = mice(train, m=5, method='pmm', printFlag=FALSE)
+#m is the number of imputations, 5 is a reasonable value as a default
+#pmm is "predictive mean matching" = imputation method for numeric data
+#printFlag reduces amount of output
+summary(imp_measurement_3)
+```
+```{r}
+train = complete(imp_measurement_3) 
+summary(train)
+```
+
+```{r}
+ggplot(train, aes(x = measurement_3, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_3, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_4, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_4, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_5, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_5, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+```{r}
+ggplot(train, aes(x = measurement_6, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_6, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_7, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_7, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_8, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_8, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_9, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_9, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_10, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_10, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_11, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_11, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+```{r}
+ggplot(train, aes(x = measurement_12, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_12, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+```{r}
+ggplot(train, aes(x = measurement_13, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_13, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+```{r}
+ggplot(train, aes(x = measurement_14, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_14, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_14, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_14, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+```{r}
+ggplot(train, aes(x = measurement_15, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_15, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_16, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_16, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+
+```{r}
+ggplot(train, aes(x = measurement_17, y = failure)) + 
+  geom_boxplot() + 
+
+  theme_bw() 
+
+ggplot(train, aes(x=measurement_17, fill = failure)) + geom_bar() + theme_bw()
+
+
+```
+

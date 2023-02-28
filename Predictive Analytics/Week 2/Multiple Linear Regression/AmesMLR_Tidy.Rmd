@@ -1,0 +1,363 @@
+## Multiple Linear Regression
+In this example, we demonstrate multiple linear regression model-building techniques. The dataset is the Ames (Iowa) home sale price data. To make things more manageable, this large dataset is reduced to eleven variables (ten predictors and one response).  
+
+Begin by loading necessary packages. As usual, you will need to install any of these packages that have not been previously installed.    
+```{r}
+library(tidyverse) #tidyverse set of packages and functions
+library(tidymodels)
+library(glmnet) #for Lasso, ridge, and elastic net models 
+library(GGally) #create ggcorr and ggpairs plots
+library(ggcorrplot) #create an alternative to ggcorr plots
+library(MASS) #access to forward and backward selection algorithms
+library(leaps) #best subset selection
+library(lmtest) #for the dw test
+library(splines) #for nonlinear fitting
+library(car) #for calculating the variance inflation factor
+```
+
+Read in the data.    
+```{r}
+ames = read_csv("AmesData.csv")
+```
+
+I've gone ahead and selected some important variables. Store these variables in a data frame named "ames2". You may discard the "ames" data frame if you wish. However, since we are dealing with relatively small datasets, it will be OK to keep both datasets in our RStudio environment.  
+```{r}
+ames2 = ames %>% dplyr::select("SalePrice", "OverallQual", "GrLivArea", "GarageCars", "GarageArea", "TotalBsmtSF", "1stFlrSF", "FullBath", "YearBuilt", "YearRemodAdd", "TotRmsAbvGrd", "Neighborhood")
+```
+
+**IMPORTANT NOTE ABOUT ABOVE CODE**: If you carefully read the line of code above you would notice that I used "dplyr::select" rather than the usual "select". I had to do this because the "MASS" and "dplyr" (part of the Tidyverse) packages both have a function called "select". R does not know which function I am trying to use. I used "dplyr::select" to indicate that I wanted to use the "select" function from the "dplyr" package.  
+
+Summarize and examine the structure of the data. See the note about the use of "str" for data that is brought into R via the "read_csv" function (part of the Tidyverse).    
+```{r}
+#str(ames) #the "read_csv" function creates attributes that persist even after manipulation (use of select in this case), this makes "str" pretty messy
+summary(ames2) #statistical summary
+glimpse(ames2) #use of glimpse to hide the read_csv attributes (there are a bunch of them because of the 81 columns in original data)
+```
+
+```{r}
+ames2 = ames2 %>% mutate(Neighborhood = as_factor(Neighborhood))
+```
+
+
+
+### Data Exploration
+Begin exploring the data by looking at a plot of our response variable only (choose a histogram for a single quantitative variable)  
+
+```{r}
+ggplot(ames2, aes(x=SalePrice)) + geom_histogram() + theme_bw()
+```
+
+Notice that "SalePrice" is reported in scientific notation (e.g., 2e+05 = 200,000). The data is somewhat skewed with most homes having "SalePrice" values less than about $300,000. There are some (but not many) very expensive homes with high prices. This brings us to a point of having to make a decision: Do we care about trying to predict the prices of these outlier (high price) homes? If not, we could make a reasonable argument to remove them from our dataset. If we wish to keep these homes in our dataset, we should be prepared to deal with modeling results that might not be as strong as we would hope. One option would be to transform the SalesPrice variable. A logarithmic transformation would likely make the variable more Normal (nice, but not required) and make it very unlikely that we would have a negative SalesPrice prediction.   
+
+Next we look at correlation. This is a logical step since almost all of our variables are quantitative.    
+```{r}
+#use "ggcorr" to create a correlation matrix with labels and correlation reported to two decimals
+ggcorr(ames2, label = "TRUE", label_round = 2) 
+
+#Alternative using the "ggcorrplot" function
+corr = round(cor(ames2[,1:11]), 2) #Note the ,1:11 code to select the columns for inclusion
+ggcorrplot(corr, hc.order = TRUE, type = "lower",
+   lab = TRUE)
+```
+All of the variables in the dataset are positively correlated with the response variable (SalePrice).  They are also all positively correlated with each other.  
+
+Use the "ggpairs" function to plot all of the variables. There are too many variables to easily display in a single "ggpairs" plot. To see what I mean you can try to run ggpairs(ames2) and see what you get. 
+```{r}
+ggpairs(ames2, columns = c("GarageArea", "GarageCars","1stFlrSF", "TotalBsmtSF", "OverallQual","SalePrice"))
+ggpairs(ames2, columns = c("TotRmsAbvGrd","GrLivArea","FullBath","YearRemodAdd","YearBuilt","SalePrice"))
+```
+We look primarily, at the bottom row in each of the "ggpairs" plots. Here we see that as each potential predictor increases, the "SalePrice" variable increases also. This is as we would expect from looking at the correlation matrix. Notice by carefully looking at the plots in the last rows, we can see that the this increase may not be linear. To see an example of this in better detail, examine the plot below for "SalePrice" and "OverallQual".
+
+```{r}
+ggplot(ames2, aes(x=OverallQual, y=SalePrice)) + geom_point() + theme_bw() #I like the clean look from theme_bw()
+```
+In the plot above, there looks to be a bit of curvature to the data. We'll see this in a more pronounced way when we build our first model.  
+
+Let's finish up by looking at the Neighborhood variable versus SalePrice. I like boxplots for this situation.  
+```{r}
+ggplot(ames2,aes(x=Neighborhood,y=SalePrice)) + geom_boxplot() + geom_jitter(alpha = 0.15) + theme_bw()
+```
+Hard to see much here (Neighborhood clearly matters, but we can't read the labels). Let's rotate the labels.  
+```{r}
+ggplot(ames2,aes(x=Neighborhood,y=SalePrice)) + geom_boxplot() + geom_jitter(alpha = 0.15) + theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90))
+```
+It's clear that some neighborhoods are more expensive than others and that some neighborhoods have few homes. Let's look at a table of counts of sales by neighborhood.  
+```{R}
+table(ames2$Neighborhood)
+```
+
+We can sort (the Tidy way):
+```{r}
+ames %>% group_by(Neighborhood) %>% summarize(freq = n()) %>% arrange(desc(freq))
+```
+It may be useful to collapse some of the infrequently occurring neighborhoods into a catch-all "Other" group. We'll look at this in a minute.  
+
+### Models
+The first model we'll build uses the variable that is best correlated with "SalePrice", "OverallQual". This is a univariate (simple) linear regression model. We also plot this model.  
+```{r}
+ames_recipe = recipe(SalePrice ~ OverallQual, ames2)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe)
+
+lm_fit = fit(lm_wflow, ames2)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+```{r}
+ggplot(ames2, aes(x=OverallQual, y=SalePrice)) + geom_point() + geom_smooth(method = lm, se = FALSE) + theme_bw()
+```
+Notice that this model tends to underpredict low and high quality homes. Homes with intermediate quality (between roughly 4 and 8) seem to predicted fairly well.  
+
+### Multivariate Regression
+Now let's move to models with more than one predictor (x) variable. We'll add GrLivArea to the model by modifying the recipe. First let's look at the relationship with the response.  
+```{r}
+ggplot(ames2, aes(x=GrLivArea, y=SalePrice)) + geom_point() + theme_bw()
+```
+
+```{r}
+ames_recipe = recipe(SalePrice ~ OverallQual + GrLivArea, ames2)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe)
+
+lm_fit2 = fit(lm_wflow, ames2)
+```
+
+```{r}
+summary(lm_fit2$fit$fit$fit)
+```
+
+Let's do our diagnostics.  
+```{r}
+dwtest(lm_fit2$fit$fit$fit)
+```
+
+All looks good. We fail to reject the null.   
+
+Examine a plot of residuals. Notice we're doing this all in one line. We are not permanently creating a residual variable.  
+```{r}
+ames2 %>% mutate(resid2 = lm_fit2$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=OverallQual,y=resid2)) + geom_point() + theme_bw() 
+```
+
+```{r}
+ames2 %>% mutate(resid2 = lm_fit2$fit$fit$fit$residuals) %>%
+  ggplot(aes(x=GrLivArea,y=resid2)) + geom_point() + theme_bw()
+```
+We might need to transform these variables in some way (to linearize them) before we proceed.  
+
+Let's start with OverallQual.  
+```{r}
+ggplot(ames2, aes(x=OverallQual, y=SalePrice)) + geom_point() + theme_bw()
+```
+
+A reasonable solution might be a spline.  
+```{r}
+#Code borrowed from the TMWR text
+ggplot(ames2, aes(x = OverallQual, y = SalePrice)) + 
+    geom_point(alpha = .2) + 
+    geom_smooth(
+      method = lm,
+      formula = y ~ ns(x, df = 4),
+      col = "red",
+      se = FALSE) + theme_bw()
+```
+
+Let's see what the spline does for our model.  
+```{r}
+ames_recipe = recipe(SalePrice ~ OverallQual + GrLivArea, ames2) %>%
+  step_ns(OverallQual, deg_free = 4) #add the spline transformation to the recipe
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe)
+
+lm_fit3 = fit(lm_wflow, ames2)
+```
+
+```{r}
+summary(lm_fit3$fit$fit$fit)
+```
+We've improved our model, but at a potential loss of interpretability due to the spline coefficients. If this is not an issue (usually isn't), then we can roll with it.  
+
+I ultimately decided not to transform GrLivArea.  
+
+Let's turn our attention to neighborhood.  
+```{r}
+ames_recipe2 = recipe(SalePrice ~ Neighborhood, ames2) %>%
+  step_dummy(all_nominal())
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe2)
+
+lm_fit4 = fit(lm_wflow, ames2)
+```
+
+```{r}
+summary(lm_fit4$fit$fit$fit)
+```
+There's a lot to digest here :) As is usual for categorical variables, we have one variable for each level in the Neighborhood variable (minus one). Some of the levels are significant. Some are not. We typically do NOT discard the Neighborhood variable (as a whole) if at least one of its levels is significant. 
+
+Let's add Neighborhood to our prior model.  
+```{r}
+ames_recipe = recipe(SalePrice ~ OverallQual + GrLivArea + Neighborhood, ames2) %>%
+  step_ns(OverallQual, deg_free = 4) %>% #add the spline transformation to the recipe
+  step_dummy(all_nominal())
+  
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe)
+
+lm_fit5 = fit(lm_wflow, ames2)
+```
+
+```{r}
+summary(lm_fit5$fit$fit$fit)
+```
+
+Also add to our recipe a condition that Neighborhoods that have very few sales in them are collapsed into an "Other" category.  
+```{r}
+ames_recipe = recipe(SalePrice ~ OverallQual + GrLivArea + Neighborhood, ames2) %>%
+  step_ns(OverallQual, deg_free = 4) %>% #add the spline transformation to the recipe
+  step_other(Neighborhood, threshold = 0.01) %>% #collapses small Neighborhoods into an "Other" group
+  step_dummy(all_nominal()) #makes Neighborhood categorical
+  
+  
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe)
+
+lm_fit6 = fit(lm_wflow, ames2)
+```
+
+```{r}
+lm_fit6 %>%
+  pull_workflow_fit() %>%
+  tidy()
+```
+
+```{r}
+summary(lm_fit6$fit$fit$fit)
+```
+
+Let's try a model with all predictors and see what happens.  
+```{r}
+ames_recipe = recipe(SalePrice ~., ames2) %>%
+  step_ns(OverallQual, deg_free = 4) %>% #add the spline transformation to the recipe
+  step_other(Neighborhood, threshold = 0.01) %>% #collapses small Neighborhoods into an "Other" group
+  step_dummy(all_nominal()) #makes Neighborhood categorical
+  
+  
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(ames_recipe)
+
+lm_fit7 = fit(lm_wflow, ames2)
+```
+
+```{r}
+lm_fit7 %>%
+  pull_workflow_fit() %>%
+  tidy()
+```
+
+```{r}
+options(scipen = 999)
+summary(lm_fit7$fit$fit$fit)
+options(scipen = 0)
+```
+
+Checking autocorrelation of residuals
+```{r}
+dwtest(lm_fit7$fit$fit$fit)
+```
+No evidence of autocorrelation.  
+
+Examine residuals for each numeric variable:
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=GrLivArea,y=resid)) + geom_point() + theme_bw()
+```
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=GarageCars,y=resid)) + geom_point() + theme_bw()
+```
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=GarageArea,y=resid)) + geom_point() + theme_bw()
+```
+
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=TotalBsmtSF,y=resid)) + geom_point() + theme_bw()
+```
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=`1stFlrSF`,y=resid)) + geom_point() + theme_bw()
+```
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=FullBath,y=resid)) + geom_point() + theme_bw()
+```
+
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=YearBuilt,y=resid)) + geom_point() + theme_bw()
+```
+
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=YearRemodAdd,y=resid)) + geom_point() + theme_bw()
+```
+
+```{r}
+ames2 %>% mutate(resid = lm_fit7$fit$fit$fit$residuals) %>% 
+ggplot(aes(x=TotRmsAbvGrd,y=resid)) + geom_point() + theme_bw()
+```
+
+
+STOPPING HERE FOR PART 1
+

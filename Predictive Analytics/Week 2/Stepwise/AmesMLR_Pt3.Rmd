@@ -1,0 +1,64 @@
+## Multiple Linear Regression
+In this example, we demonstrate multiple linear regression model-building techniques. The dataset is the Ames (Iowa) home sale price data. To make things more manageable, this large dataset is reduced to eleven variables (ten predictors and one response).  
+
+Begin by loading necessary packages. As usual, you will need to install any of these packages that have not been previously installed.    
+```{r}
+library(tidyverse) #tidyverse set of packages and functions
+library(tidymodels)
+library(glmnet) #for Lasso, ridge, and elastic net models 
+library(GGally) #create ggcorr and ggpairs plots
+library(ggcorrplot) #create an alternative to ggcorr plots
+library(MASS) #access to forward and backward selection algorithms
+library(leaps) #best subset selection
+library(lmtest) #for the dw test
+library(splines) #for nonlinear fitting
+```
+
+As we did before, read in the data and select a few variables of interest (to keep the analysis from being too large).     
+```{r}
+ames = read_csv("AmesData.csv")
+```
+
+```{r}
+ames2 = ames %>% dplyr::select("SalePrice", "OverallQual", "GrLivArea", "GarageCars", "GarageArea", "TotalBsmtSF", "1stFlrSF", "FullBath", "YearBuilt", "YearRemodAdd", "TotRmsAbvGrd", "Neighborhood")
+```
+
+```{r}
+ames2 = ames2 %>% mutate(Neighborhood = as_factor(Neighborhood))
+```
+
+### Stepwise Regression Methods (Non-Tidymodels)
+Next we'll look at an automated method to do forward and backward selection for multiple (multivariate) linear regression models. Recall that in forward selection we start with an empty model (no predictor variables) and add variables one at time to attempt to improve the model. We stop when there is no further opportunity for improvement. Backward selection works similarly, but starts with a model with all of the predictors and removes variables one at time, stopping when no further improvement can occur.  
+
+Start by building two models: One model that contains all of the predictors and one that is empty.
+```{R}
+allmod = lm(SalePrice ~., ames2) #use the ~. to include all predictors rather than typing them all in
+summary(allmod)
+
+emptymod = lm(SalePrice ~1, ames2) #use ~1 to build an empty model 
+summary(emptymod)
+```
+
+Backward stepwise  
+```{r}
+#backward
+backmod = stepAIC(allmod, direction = "backward", trace = TRUE) #trace = TRUE shows how the model is built (which variables are removed)
+summary(backmod)
+```
+
+Forward stepwise
+```{r}
+#forward
+forwardmod = stepAIC(emptymod, direction = "forward", scope=list(upper=allmod,lower=emptymod),
+                      trace = TRUE) #trace = TRUE shows how the model is built (which variables                                       are added)
+summary(forwardmod) #note multicollinearity with FullBath with a negative coefficient
+
+#plot to show multicollinearity
+ggplot(ames2, aes(x=FullBath, y=SalePrice)) + geom_point() + theme_bw()
+```
+
+
+
+
+
+

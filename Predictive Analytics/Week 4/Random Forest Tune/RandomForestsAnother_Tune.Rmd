@@ -1,0 +1,219 @@
+## Another Random Forest
+
+```{r, include = FALSE}
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(ranger) #for random forests
+library(randomForest) #also for random forests
+library(caret)
+library(skimr)
+library(GGally)
+library(gridExtra)
+library(vip) #variable importance
+```
+
+Load data from the CSData.csv file.  
+```{r}
+churn = read_csv("churn-2.csv")
+```
+
+Structure and summary
+```{R}
+str(churn)
+summary(churn)
+```
+Delete customer ID column  
+```{r}
+churn = churn %>% select(-customerID)
+```
+
+Convert all character variables to factors  
+```{r}
+churn = churn %>% mutate_if(is.character,as_factor)
+```
+
+```{r}
+str(churn)
+```
+
+```{r}
+churn = churn %>% mutate(SeniorCitizen = as_factor(SeniorCitizen)) %>%
+  mutate(SeniorCitizen = fct_recode(SeniorCitizen, "No" = "0", "Yes" = "1"))
+str(churn)
+```
+
+Check for missing data 
+```{r}
+skim(churn)
+```
+
+Only missingness is in TotalCharges. Very small percentage. Row-wise deletion should be fine.  
+```{r}
+churn = churn %>% drop_na()
+```
+
+Now we'll split the data.  
+```{r}
+set.seed(123) 
+churn_split = initial_split(churn, prop = 0.7, strata = Churn) #70% in training
+train = training(churn_split)
+test = testing(churn_split)
+```
+
+Set up our folds for cross-validation  
+```{r}
+set.seed(123)
+rf_folds = vfold_cv(train, v = 5)
+```
+
+Random forest with an R-defined tuning grid (this model took about 5 minutes to run)
+```{r}
+churn_recipe = recipe(Churn ~., train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+rf_model = rand_forest(mtry = tune(), min_n = tune(), trees = 100) %>% #add tuning of mtry and min_n parameters
+  #setting trees to 100 here should also speed things up a bit, but more trees might be better
+  set_engine("ranger", importance = "permutation") %>% #added importance metric
+  set_mode("classification")
+
+churn_wflow = 
+  workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(churn_recipe)
+
+set.seed(123)
+rf_res = tune_grid(
+  churn_wflow,
+  resamples = rf_folds,
+  grid = 20 #try 20 different combinations of the random forest tuning parameters
+)
+```
+
+Look at parameter performance (borrowed from https://juliasilge.com/blog/sf-trees-random-tuning/)
+```{r}
+rf_res %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  select(mean, min_n, mtry) %>%
+  pivot_longer(min_n:mtry,
+    values_to = "value",
+    names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "Accuracy")
+```
+Refining the parameters  
+```{r}
+churn_recipe = recipe(Churn ~., train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+rf_model = rand_forest(mtry = tune(), min_n = tune(), trees = 100) %>% #add tuning of mtry and min_n parameters
+  #setting trees to 100 here should also speed things up a bit, but more trees might be better
+  set_engine("ranger", importance = "permutation") %>% #added importance metric
+  set_mode("classification")
+
+churn_wflow = 
+  workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(churn_recipe)
+
+rf_grid = grid_regular(
+  mtry(range = c(3, 10)), #these values determined through significant trial and error
+  min_n(range = c(20, 70)), #these values determined through significant trial and error
+  levels = 5
+)
+
+set.seed(123)
+rf_res_tuned = tune_grid(
+  churn_wflow,
+  resamples = rf_folds,
+  grid = rf_grid #use the tuning grid
+)
+```
+
+```{r}
+rf_res_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  select(mean, min_n, mtry) %>%
+  pivot_longer(min_n:mtry,
+    values_to = "value",
+    names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "Accuracy")
+```
+An alternate view of the parameters  
+```{r}
+rf_res_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  mutate(min_n = factor(min_n)) %>%
+  ggplot(aes(mtry, mean, color = min_n)) +
+  geom_line(alpha = 0.5, size = 1.5) +
+  geom_point() +
+  labs(y = "Accuracy")
+```
+
+```{r}
+best_rf = select_best(rf_res_tuned, "accuracy")
+
+final_rf = finalize_workflow(
+  churn_wflow,
+  best_rf
+)
+
+final_rf
+```
+```{r}
+#fit the finalized workflow to our training data
+final_rf_fit = fit(final_rf, train)
+```
+
+Check out variable importance
+```{r}
+final_rf_fit %>% pull_workflow_fit() %>% vip(geom = "point")
+```
+
+Predictions  
+```{r}
+trainpredrf = predict(final_rf_fit, train)
+head(trainpredrf)
+```
+
+Confusion matrix
+```{r}
+confusionMatrix(trainpredrf$.pred_class, train$Churn, 
+                positive = "Yes")
+```
+
+Predictions on test
+```{r}
+testpredrf = predict(final_rf_fit, test)
+head(testpredrf)
+confusionMatrix(testpredrf$.pred_class, test$Churn, 
+                positive = "Yes")
+```
+
+Save the model to a file to load later (if needed)  
+```{r}
+saveRDS(final_rf_fit, "final_rf_fit.rds")
+```
+
+Load the model  
+```{r}
+final_rf_fit = readRDS("final_rf_fit.rds")
+```
+
+
+
+
+
+
+

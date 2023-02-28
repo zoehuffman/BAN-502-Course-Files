@@ -1,0 +1,153 @@
+### Multiple Linear Regression Diagnostics
+
+Packages  
+```{r,warning=FALSE,message=FALSE}
+#install.packages("tidyverse","GGally","gridExtra","car")
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(gridExtra) #used for a little fancy arranging of plots
+library(car) #for the VIF function
+library(glmnet)
+```
+
+Read-in data. For this work we will use a subset of the Lahman Baseball Database. The full database is available online here: http://www.seanlahman.com/baseball-archive/statistics/. 
+
+```{r}
+teams = read_csv("Teams.csv")
+```
+
+Examine the teams data frame.  
+```{r}
+str(teams)
+summary(teams)
+```
+
+Let's restrict our analysis to more recent years (from 1969 to 2018).  
+```{r}
+teams = teams %>% filter(yearID >= 1969)
+summary(teams$yearID)
+```
+
+Let's work toward building a multiple linear regression model to predict the number of games that a team will win each year (recorded in the "W" column in the data). To expedite things a bit, let's choose a few simple variables.  
+
+```{r}
+teams = teams %>% select(c("yearID","teamID","W","R","H","HR","RA","HA","HRA"))
+#These variables are W = Wins, R = Runs, H = Hits, HR = Home Runs, RA = Runs Against, HA = Hits Against, HRA = Home Runs Against
+summary(teams)
+```
+
+Examine the correlation between the quantitative variables.  
+```{r}
+ggcorr(teams,label = TRUE,label_round = 2)
+```
+
+The correlation matrix shows that many of the variables are correlated with each other. This is a pretty common occurrence in many datasets (especially sports-related datasets). The variable that is most strongly correlated with our response variable (W) is R (Runs) with a correlation of 0.61. The next most correlated variable with W is H (Hits) with a correlation of 0.54. Note that R and H are strongly correlated with each other (0.82). The next strongest variable (with respect to correlation with W) is HR (Home Runs) with a correlation of 0.39. Note that HR is also correlated with R and H.
+
+To demonstrate multicollinearity, let's build a model with R, H, and HR to predict W. Before we do so, visually examine the relationship between R, H, and HR and W. 
+```{r}
+p1 = ggplot(teams, aes(x=R,y=W)) + geom_point() + theme_bw()
+p2 = ggplot(teams, aes(x=H,y=W)) + geom_point() + theme_bw()
+p3 = ggplot(teams, aes(x=HR,y=W)) + geom_point() + theme_bw()
+grid.arrange(p1,p2,p3, ncol = 2) #arranging ggplot objects in a grid
+```
+Each of these variables appears (as suggested by the correlation matrix and the plots) to have a positive relationship with W. We would expect each of these variables to contribute in a positive manner to the number of expected wins (i.e., more R, H, and HRs leads to more W). 
+
+Building the linear regression model.
+```{r}
+recipe1 = recipe(W ~ R + H + HR, teams)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(recipe1)
+
+lm_fit = fit(lm_wflow, teams)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+Each of the variable coefficients (for R, H, and HR), as shown in the Estimate column, should be positive. However, the coefficient for HR is negative! This is a clear indication of multicollinearity. Be sure to "sanity check" each of your coefficients to make sure that their signs are oriented correctly.  
+
+We can also assess multicollinearity via a statistic known as the Variance Inflation Factor (VIF). We use the vif function from the car package.  
+```{r}
+car::vif(lm_fit$fit$fit$fit) #Using the vif function from the the car package
+```
+In general, seeing variables with VIF values greater than 4 indicates the presence of multicollinearity. This is just a "rule of thumb" though and should not be taken as an absolute.  
+
+Ridge regression should help or we can drop the HR variable.  
+
+What happens if we drop the HR variable?  
+```{r}
+recipe2 = recipe(W ~ R + H, teams)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(recipe2)
+
+lm_fit2 = fit(lm_wflow, teams)
+```
+
+```{r}
+summary(lm_fit2$fit$fit$fit)
+```
+```{r}
+car::vif(lm_fit2$fit$fit$fit) #Using the vif function from the the car package
+```
+
+As we did with simple linear regression, we also need to examine residuals (to assess the linear regression model assumptions related to residuals).  
+```{r}
+teams = teams %>% mutate(resid2 = lm_fit2$fit$fit$fit$residuals)
+```
+
+We create separate residual plots for each of the three predictor variables in our model.  
+```{r}
+p1 = ggplot(teams, aes(x=R,y=resid2)) + geom_point() + theme_bw()
+p2 = ggplot(teams, aes(x=H,y=resid2)) + geom_point() + theme_bw()
+p3 = ggplot(teams, aes(x=HR,y=resid2)) + geom_point() + theme_bw()
+grid.arrange(p1,p2,p3, ncol = 2) #arranging ggplot objects in a grid
+```
+
+```{r}
+ggplot(teams,aes(x=resid2)) + geom_histogram() + theme_bw()
+```
+The residual plots are not indicative of unequal variance or non-Normal residuals.  
+
+Quick look at Ridge.  
+```{r}
+recipe2 = recipe(W ~ R + H + HR, teams)
+
+ridge_model = #give the model type a name 
+  linear_reg(mixture = 0) %>% #specify that we are doing linear regression
+  set_engine("glmnet") #specify the specify type of linear tool we want to use 
+
+ridge_wflow = 
+  workflow() %>% 
+  add_model(ridge_model) %>% 
+  add_recipe(recipe2)
+
+ridge_fit = fit(ridge_wflow, teams)
+```
+
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 2.1) #show the coefficients for our selected lambda value
+```

@@ -1,0 +1,80 @@
+## Random Forests
+
+```{r, include = FALSE}
+library(titanic)
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(ranger) #for random forests
+library(randomForest) #also for random forests
+library(caret)
+```
+
+Read in dataset   
+```{r}
+titanic = titanic::titanic_train
+```
+
+Structure and summary
+```{r}
+str(titanic)
+summary(titanic)
+```
+
+Factor conversion and recoding and imputation
+```{r}
+titanic = titanic %>% mutate(Survived = as_factor(Survived)) %>% 
+  mutate(Survived = fct_recode(Survived, "No" = "0", "Yes" = "1" )) %>%
+  mutate(Pclass = as_factor(Pclass)) %>% mutate(Sex = as_factor(Sex)) %>%
+  mutate(Embarked = as_factor(Embarked)) %>% 
+  mutate(Embarked = fct_recode(Embarked,"Unknown"="","Cherbourg"="C","Southampton"="S","Queenstown"="Q")) %>%
+  select(Survived, Pclass, Sex, Age, SibSp, Parch, Fare, Embarked)
+
+set.seed(1234)
+imp_age = mice(titanic, m=5, method='pmm', printFlag=FALSE)
+
+titanic_complete = complete(imp_age) 
+summary(titanic_complete)
+```
+
+###Building Random Forest Model with Tidymodels
+```{r}
+titanic_recipe = recipe(Survived ~., titanic_complete) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+rf_model = rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+titanic_wflow = 
+  workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(titanic_recipe)
+
+set.seed(123)
+titanic_fit = fit(titanic_wflow, titanic_complete)
+```
+
+Check out random forest details  
+```{r}
+titanic_fit
+```
+
+Predictions  
+```{r}
+predRF = predict(titanic_fit, titanic_complete)
+head(predRF)
+```
+
+Confusion matrix
+```{r}
+confusionMatrix(predRF$.pred_class, titanic_complete$Survived, positive = "Yes")
+```
+
+
+
+
+
+
+

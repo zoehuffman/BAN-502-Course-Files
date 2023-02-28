@@ -1,0 +1,107 @@
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(glmnet)
+library(GGally)
+library(ggcorrplot)
+library(MASS)
+library(car)
+library(lubridate)
+library(lmtest)
+library(splines)
+```
+
+```{r}
+bike <- read_csv("bike_cleaned-3.csv")
+```
+
+```{r}
+bike = bike %>% mutate(dteday = mdy(dteday))
+```
+
+```{r}
+bike = bike %>% mutate_if(is.character, as_factor)
+```
+
+```{r}
+bike = bike %>% mutate(hr = as_factor(hr))
+```
+
+```{r}
+ggcorr(bike,label = TRUE, label_round = 3) 
+```
+
+
+```{r}
+ggpairs(bike, columns = "season")
+```
+
+```{r}
+bikerecipe = recipe(count ~ hr, bike)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(bikerecipe)
+
+lm_fit = fit(lm_wflow, bike)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+```{r}
+ggplot(bike, aes(x=temp, y=count)) + geom_point() + geom_smooth(method = lm, se = FALSE) + theme_bw()
+```
+
+```{r}
+bikerecipe = recipe(count ~ hr + temp, bike)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(bikerecipe)
+
+lm_fit = fit(lm_wflow, bike)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+```{r}
+bikerecipe = recipe(count ~ atemp + temp, bike)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(bikerecipe)
+
+lm_fit = fit(lm_wflow, bike)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+```{r}
+allmod = lm(count ~ season + mnth + hr + holiday + weekday + workingday + weathersit +
+temp + atemp + hum + windspeed, bike) #use the ~. to include all predictors rather than typing them all in
+
+backmod = stepAIC(allmod, direction = "backward", trace = TRUE) #trace = TRUE shows how the model is built (which variables are removed)
+summary(backmod)
+```
+

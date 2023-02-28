@@ -1,0 +1,158 @@
+## Another Random Forest
+
+```{r, include = FALSE}
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(ranger) #for random forests
+library(randomForest) #also for random forests
+library(caret)
+library(skimr)
+library(GGally)
+library(gridExtra)
+library(vip) #variable importance
+```
+
+Load data from the CSData.csv file.  
+```{r}
+churn = read_csv("churn-1.csv")
+```
+
+Structure and summary
+```{R}
+str(churn)
+summary(churn)
+```
+Delete customer ID column  
+```{r}
+churn = churn %>% select(-customerID)
+```
+
+Convert all character variables to factors  
+```{r}
+churn = churn %>% mutate_if(is.character,as_factor)
+```
+
+```{r}
+str(churn)
+```
+```{r}
+churn = churn %>% mutate(SeniorCitizen = as_factor(SeniorCitizen)) %>%
+  mutate(SeniorCitizen = fct_recode(SeniorCitizen, "No" = "0", "Yes" = "1"))
+str(churn)
+```
+Check for missing data 
+```{r}
+skim(churn)
+```
+Only missingness is in TotalCharges. Very small percentage. Row-wise deletion should be fine.  
+```{r}
+churn = churn %>% drop_na()
+```
+
+Now we'll split the data.  
+```{r}
+set.seed(123) 
+churn_split = initial_split(churn, prop = 0.7, strata = Churn) #70% in training
+train = training(churn_split)
+test = testing(churn_split)
+```
+
+Visualization  
+```{r}
+p1 = ggplot(train, aes(x = gender, fill = Churn)) + geom_bar(position = "fill")
+p2 = ggplot(train, aes(x = SeniorCitizen, fill = Churn)) + geom_bar(position = "fill")
+p3 = ggplot(train, aes(x = Partner, fill = Churn)) + geom_bar(position = "fill")
+p4 = ggplot(train, aes(x = Dependents, fill = Churn)) + geom_bar(position = "fill")
+grid.arrange(p1,p2,p3,p4)
+```
+```{r}
+p1 = ggplot(train, aes(x = PhoneService, fill = Churn)) + geom_bar(position = "fill")
+p2 = ggplot(train, aes(x = MultipleLines, fill = Churn)) + geom_bar(position = "fill")
+p3 = ggplot(train, aes(x = InternetService, fill = Churn)) + geom_bar(position = "fill")
+p4 = ggplot(train, aes(x = OnlineSecurity, fill = Churn)) + geom_bar(position = "fill")
+grid.arrange(p1,p2,p3,p4)
+```
+
+```{r}
+p1 = ggplot(train, aes(x = OnlineBackup, fill = Churn)) + geom_bar(position = "fill")
+p2 = ggplot(train, aes(x = DeviceProtection, fill = Churn)) + geom_bar(position = "fill")
+p3 = ggplot(train, aes(x = TechSupport, fill = Churn)) + geom_bar(position = "fill")
+p4 = ggplot(train, aes(x = StreamingTV, fill = Churn)) + geom_bar(position = "fill")
+grid.arrange(p1,p2,p3,p4)
+```
+
+```{r}
+p1 = ggplot(train, aes(x = StreamingMovies, fill = Churn)) + geom_bar(position = "fill")
+p2 = ggplot(train, aes(x = Contract, fill = Churn)) + geom_bar(position = "fill")
+p3 = ggplot(train, aes(x = PaperlessBilling, fill = Churn)) + geom_bar(position = "fill")
+p4 = ggplot(train, aes(x = PaymentMethod, fill = Churn)) + geom_bar(position = "fill")
+grid.arrange(p1,p2,p3,p4)
+```
+
+```{r}
+p1 = ggplot(train, aes(x = Churn, y = tenure)) + geom_boxplot()
+p2 = ggplot(train, aes(x = Churn, y = MonthlyCharges)) + geom_boxplot()
+p3 = ggplot(train, aes(x = Churn, y = TotalCharges)) + geom_boxplot()
+grid.arrange(p1,p2,p3, ncol = 2)
+```
+Random forest  
+```{r}
+churn_recipe = recipe(Churn ~., train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+rf_model = rand_forest() %>% 
+  set_engine("ranger", importance = "permutation") %>% #added importance metric
+  set_mode("classification")
+
+churn_wflow = 
+  workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(churn_recipe)
+
+set.seed(123)
+churn_fit = fit(churn_wflow, train)
+```
+
+Predictions  
+```{r}
+trainpredrf = predict(churn_fit, train)
+head(trainpredrf)
+```
+
+Confusion matrix
+```{r}
+confusionMatrix(trainpredrf$.pred_class, train$Churn, 
+                positive = "Yes")
+```
+
+Predictions on test
+```{r}
+testpredrf = predict(churn_fit, test)
+head(testpredrf)
+confusionMatrix(testpredrf$.pred_class, test$Churn, 
+                positive = "Yes")
+```
+
+Save the model to a file to load later (if needed)  
+```{r}
+saveRDS(churn_fit, "churn_fit.rds")
+```
+
+Load the model  
+```{r}
+churn_fit = readRDS("churn_fit.rds")
+```
+
+Check out variable importance
+```{r}
+churn_fit %>% pull_workflow_fit() %>% vip(geom = "point")
+```
+
+
+
+
+
+
+

@@ -1,0 +1,106 @@
+## Classification Trees
+
+```{r}
+options(tidyverse.quiet = TRUE)
+library(titanic)
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(rpart) #for classification trees
+library(rpart.plot) #for plotting trees
+library(RColorBrewer) #better visualization of classification trees
+library(rattle) #better visualization of classification trees
+```
+
+Read in dataset   
+```{r}
+titanic = titanic::titanic_train
+```
+
+Structure and summary
+```{r}
+str(titanic)
+summary(titanic)
+```
+
+Factor conversion and recoding (Always do this prior to splitting)  
+```{r}
+titanic = titanic %>% mutate(Survived = as_factor(Survived)) %>% 
+  mutate(Survived = fct_recode(Survived, "No" = "0", "Yes" = "1" )) %>%
+  mutate(Pclass = as_factor(Pclass)) %>% mutate(Sex = as_factor(Sex)) %>%
+  mutate(Embarked = as_factor(Embarked)) %>% 
+  mutate(Embarked = fct_recode(Embarked,"Unknown"="","Cherbourg"="C","Southampton"="S","Queenstown"="Q")) %>%
+  select(Survived, Pclass, Sex, Age, SibSp, Parch, Fare, Embarked)
+
+str(titanic)
+```
+
+```{r}
+#select only variables relevant to our analysis
+titanic = titanic %>% select(c("Survived","Pclass","Sex","Age","SibSp","Parch","Embarked"))
+
+set.seed(1234)
+imp_age = mice(titanic, m=5, method='pmm', printFlag=FALSE)
+summary(imp_age)
+```
+
+Merge the imputed values into our titanic data frame. Imputation is part of the data cleaning process and should occur prior to splitting. 
+```{r}
+titanic_complete = complete(imp_age) 
+summary(titanic_complete)
+```
+
+Splitting.  
+```{r}
+set.seed(123) 
+titanic_split = initial_split(titanic_complete, prop = 0.7, strata = Survived) #70% in training
+train = training(titanic_split) 
+test = testing(titanic_split)
+```
+
+Now that we have the split data, let's build a classification tree. Here we use caret to manage the model building.  
+```{r}
+titanic_recipe = recipe(Survived ~ Age, train)
+
+tree_model = decision_tree() %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("classification")
+
+titanic_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(titanic_recipe)
+
+titanic_fit = fit(titanic_wflow, train)
+```
+
+Let's take a look at our tree (a few ways)  
+```{r}
+#look at the tree's fit
+titanic_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+```{r}
+#extract the tree's fit from the fit object
+tree = titanic_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+#plot the tree
+rpart.plot(tree)
+```
+```{r}
+#alternative
+fancyRpartPlot(tree) 
+```
+Look at the "rpart" complexity parameter "cp".    
+```{r}
+titanic_fit$fit$fit$fit$cptable
+```
+
+
+
+
+

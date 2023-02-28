@@ -1,0 +1,90 @@
+## Interaction Effects in Regression
+
+Interactions --> The effect of one variable is dependent on the value of another.
+
+Libraries
+```{r}
+library(tidyverse) #tidyverse set of packages and functions
+library(tidymodels)
+library(glmnet) #for Lasso, ridge, and elastic net models 
+library(GGally) #create ggcorr and ggpairs plots
+library(ggcorrplot) #create an alternative to ggcorr plots
+library(MASS) #access to forward and backward selection algorithms
+library(leaps) #best subset selection
+library(lmtest) #for the dw test
+library(splines) #for nonlinear fitting
+```
+
+Read in data and examine structure
+```{r}
+birth = read_csv("birth_smoker-1.csv")
+summary(birth)
+str(birth)
+```
+```{r}
+birth = birth %>% mutate(smoker = as_factor(smoker))
+```
+
+
+Plots  
+```{r}
+ggplot(birth,aes(x=gestation,y=weight)) + geom_point() + theme_bw()
+```
+Clearly, gestation length affects weight. Longer gestation --> higher weight. How about smoking?  
+```{r}
+ggplot(birth,aes(x=smoker,y=weight)) + geom_boxplot() + theme_bw()
+```
+Clearly, smoking leads to lower birth weights.  
+
+Let's look at one more plot to see how all of these variables interact.  
+```{r}
+ggplot(birth,aes(x = gestation,y = weight, color = smoker)) + 
+  geom_point() + geom_smooth(method='lm', se = FALSE)+ theme_bw()
+```
+
+We have a couple of ways that we can approach this. Let's look at a model with "gestation" and "smoker" to predict "weight".  
+
+```{r}
+birth_recipe = recipe(weight ~ gestation + smoker, birth) %>%
+  step_dummy(all_nominal())
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(birth_recipe)
+
+lm_fit = fit(lm_wflow, birth)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+Both gestation and smoker are significant. Being a smoker has a negative impact on weight.  
+
+From our plot above it looks like there might be a slight difference in the slopes of the regression lines by group. Let's add an interaction effect to the model and see what we get. 
+```{r}
+birth_recipe = recipe(weight ~ gestation + smoker, birth) %>%
+  step_dummy(all_nominal()) %>%
+  step_interact(~gestation:starts_with("smoker_"))
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(birth_recipe)
+
+lm_fit2 = fit(lm_wflow, birth)
+```
+
+```{r}
+summary(lm_fit2$fit$fit$fit)
+```
+No apparent interaction (i.e., the slope of the regression lines by smoker group are not significantly different).  
+

@@ -1,0 +1,145 @@
+## Logistic Regression (Threshold)
+
+In this lecture, we'll build a simple logistic regression model and explore the idea of probability thresholds.  
+
+Libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(e1071) #often needed for various statistical tasks
+library(ROCR) #for threshold selection
+```
+
+Load data from the CSData.csv file.  
+```{r}
+credit = read_csv("CSData-1.csv")
+```
+
+Structure and summary
+```{R}
+str(credit)
+summary(credit)
+```
+
+Factor conversion. Convert the response variable SeriousDlqin2yrs.
+```{r}
+credit = credit %>% mutate(SeriousDlqin2yrs = as_factor(SeriousDlqin2yrs)) %>% 
+  mutate(SeriousDlqin2yrs = fct_recode(SeriousDlqin2yrs, "No" = "0", "Yes" = "1" )) 
+
+str(credit)
+```
+
+Data cleaning (same as done before).  
+```{r}
+credit = credit %>% filter(RevolvingUtilizationOfUnsecuredLines < 2) %>%
+  filter(DebtRatio < 5) %>% 
+  filter(MonthlyIncome < 20000) %>% drop_na() %>% 
+  filter(NumberOfOpenCreditLinesAndLoans < 40) %>%
+  filter(NumberOfTimes90DaysLate < 10) %>% 
+  filter(NumberRealEstateLoansOrLines < 10) %>% 
+  filter(NumberOfDependents < 10)
+```
+
+Build a model with all of the variables.   
+```{r}
+credit_model = 
+  logistic_reg(mode = "classification") %>% #note the use of logistic_reg and mode = "classification"
+  set_engine("glm") #standard logistic regression engine is glm
+
+credit_recipe = recipe(SeriousDlqin2yrs ~., credit)
+
+logreg_wf = workflow() %>%
+  add_recipe(credit_recipe) %>% 
+  add_model(credit_model)
+
+credit_fit = fit(logreg_wf, credit)
+```
+
+Develop predictions  
+```{r}
+predictions = predict(credit_fit, credit, type="prob") #develop predicted probabilities
+head(predictions)
+```
+Let's extract just the "Yes" prediction.  
+```{r}
+predictions = predict(credit_fit, credit, type="prob")[2]
+head(predictions)
+```
+
+Threshold selection  
+```{r}
+#Change this next line to the names of your predictions and the response variable in the training data frame
+ROCRpred = prediction(predictions, credit$SeriousDlqin2yrs) 
+
+###You shouldn't need to ever change the next two lines:
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+Area under the curve (AUC). AUC is a measure of the strength of the model. Values closer to 1 are better. Can be used to compare models.  
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+```{r}
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+Test thresholds to evaluate accuracy  
+```{r}
+#confusion matrix
+#The "No" and "Yes" represent the actual values
+#The "FALSE" and "TRUE" represent our predicted values
+t1 = table(credit$SeriousDlqin2yrs,predictions > 0.06391437)
+t1
+```
+
+Calculate accuracy  
+```{r}
+(t1[1,1]+t1[2,2])/nrow(credit)
+```
+Sensitivity
+```{r}
+5960/(2007+5960)
+```
+
+Specificity
+```{r}
+78541/(78541+28498)
+```
+
+Can apply trial and error to maximize accuracy (here trying 0.5 as threshold)
+```{r}
+t1 = table(credit$SeriousDlqin2yrs,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(credit)
+```
+
+Threshold = 0.6  
+```{r}
+t1 = table(credit$SeriousDlqin2yrs,predictions > 0.6)
+t1
+(t1[1,1]+t1[2,2])/nrow(credit)
+```
+
+This dataset is a good example of imbalanced data. There are far more non-delinquent customers than delinquent ones. In these situations, you have to be very careful how you assess model quality.  
+
+A naive prediction (everyone not delinquent)
+```{r}
+t1 = table(credit$SeriousDlqin2yrs,predictions > 1) #set threshold to 1 so all are classified as not delinquent
+t1
+(t1[1])/nrow(credit)
+```
+
+
+
+

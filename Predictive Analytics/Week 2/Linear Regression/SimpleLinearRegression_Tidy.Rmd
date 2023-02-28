@@ -1,0 +1,111 @@
+## Simple (One Predictor) Linear Regression
+
+Needed libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally) #ggcorr and ggpairs
+library(ggcorrplot) #correlation plot alternative
+library(gridExtra) #create grids of plots
+```
+
+Read-in the data. Before doing this make sure that you have placed the CreditData.csv file (downloadable from Canvas) in your project's working directory.
+```{r}
+credit = read_csv("CreditData.csv")
+```
+Examine the structure and summary of the dataset  
+```{r}
+str(credit) #all variables numeric
+summary(credit) #no missingness
+```
+
+Our Y (response) variable in this dataset is "AnnualCharges".  Let's look at ggpairs plot for visualization and correlation.  
+```{r}
+ggpairs(credit)
+```
+Alternatively:  
+```{r}
+p1 = ggplot(credit, aes(x=AnnualIncome,y=AnnualCharges)) + geom_point(alpha=0.1) #changing alpha is helpful when many points may overlap
+p2 = ggplot(credit, aes(x=HouseholdSize,y=AnnualCharges)) + geom_point(alpha=0.1)
+p3 = ggplot(credit, aes(x=YrsEdAfterHS,y=AnnualCharges)) + geom_point(alpha=0.1)
+p4 = ggplot(credit, aes(x=HrWkTV,y=AnnualCharges)) + geom_point(alpha=0.1)
+grid.arrange(p1,p2,p3,p4,ncol=2)
+```
+The best variable (by correlation and confirmed by visualization) to predict AnnualCharges appears to be AnnualIncome (correlation = 0.562 and there is an intuitive increase in charges as income increases).  
+
+Build a regression model with AnnualIncome to predict AnnualCharges.  
+
+This is the non-Tidymodels approach
+```{r}
+mod1 = lm(AnnualCharges ~ AnnualIncome, credit) #create linear regression model
+summary(mod1) #examine the model
+```
+Is this a good model?  
+
+R-squared value is OK. The AnnualIncome variable is significant (p-value < 0.05) and has an intuitive (positive) coefficient sign.  
+
+Plot the model  
+```{r}
+ggplot(credit,aes(x=AnnualIncome,y=AnnualCharges)) + geom_point(alpha=0.1) + geom_smooth(method = "lm", color = "red") + theme_bw()
+```
+
+Let's see how we would do this same model with Tidymodels. We start by building a recipe.    
+```{r}
+credit_simple = recipe(AnnualCharges ~ AnnualIncome, credit)
+credit_simple
+```
+Not too much to see here, but shows the roles that the variables will take in the model.  
+
+We're not going to do any feature engineering at this point. We will also not worry about interaction terms.  
+
+Next we specify the type of model that we are building.  
+```{r}
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+```
+
+Next we combine the recipe and the model with a workflow.  
+```{r}
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(credit_simple)
+```
+
+Next we fit (execute) the workflow on our dataset.  
+```{r}
+lm_fit = fit(lm_wflow, credit)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit) #three fits :), the actual fit is embedded deeply in the object
+```
+
+In some ways, this seems harder than the simple line of code for the linear regression model before. However, this approach gives us a lot more flexibility with more complicated models in the future.  
+
+Build a regression model with next "best" variable HouseholdSize to predict AnnualCharges.  
+```{r}
+credit_simple_2 = recipe(AnnualCharges ~ HouseholdSize, credit) #recipe
+
+lm_wflow_2 = #change name 
+  workflow() %>% 
+  add_model(lm_model) %>% #can re-use the same lm_model 
+  add_recipe(credit_simple_2) #change to new recipe name
+
+lm_fit_2 = fit(lm_wflow_2, credit)
+```
+
+```{r}
+summary(lm_fit_2$fit$fit$fit)
+```
+Is this a good model?  
+
+R-squared value is pretty poor. The HouseholdSize variable is significant (p-value < 0.05) and has an intuitive sign. Note: As datasets increase in size, it's VERY easy for the predictor variable to be significant.  
+
+Plot the model  
+```{r}
+ggplot(credit,aes(x=HouseholdSize,y=AnnualCharges)) + geom_point(alpha=0.1) + geom_smooth(method = "lm", color = "red") + theme_bw()
+```
+While the slope is significant, is this really a good model?  
+

@@ -1,0 +1,70 @@
+```{r}
+library("tidyverse")
+library("tidymodels")
+library("GGally")
+library("lmtest")
+```
+
+```{r}
+air = airquality
+```
+
+```{r}
+air2 = air %>% drop_na()
+```
+
+```{r}
+ggpairs(air2)
+```
+
+```{r}
+ggcorr(air2, label = TRUE)
+```
+
+```{r}
+lm_fit = recipe(Ozone ~ Temp, air2)
+lm_fit
+```
+
+```{r}
+lm_model =
+  linear_reg() %>%
+  set_engine("lm")
+```
+
+```{r}
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(lm_fit)
+```
+
+```{r}
+lm_fit2 = fit(lm_wflow, air2)
+```
+
+```{r}
+summary(lm_fit2$fit$fit$fit)
+```
+
+```{r}
+confint(lm_fit2$fit$fit$fit)
+```
+
+```{r}
+airfit3 = recipe(Ozone ~ Wind, air2) #recipe
+
+lm_wflow_2 = #change name 
+  workflow() %>% 
+  add_model(lm_model) %>% #can re-use the same lm_model 
+  add_recipe(airfit3) #change to new recipe name
+
+lm_fit_2 = fit(lm_wflow_2, air2)
+```
+
+```{r}
+summary(lm_fit_2$fit$fit$fit)
+```
+
+
+

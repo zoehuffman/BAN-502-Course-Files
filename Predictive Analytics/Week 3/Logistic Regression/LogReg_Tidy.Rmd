@@ -1,0 +1,234 @@
+## Logistic Regression with Titanic Dataset
+
+```{r, out.width = "300px"}
+knitr::include_graphics("titanic.jpg")
+```
+I've included the R code that is used to add an image to R Markdown file if you feel inclined to do that yourself in the future. Note, that you should set the output width of the image by:
+
+{r, out.width = "300px"} in the beginning of the chunk. You can set an appropriate pixel width for your image. Here I chose 300 pixels.  
+
+Libraries  
+```{r}
+library(titanic)
+library(tidyverse)
+library(tidymodels)
+library(glmnet) #for Lasso, ridge, and elastic net models 
+```
+
+Load Titanic Data from the titanic package. 
+```{r}
+titanic = titanic::titanic_train
+```
+
+Structure and summary
+```{R}
+str(titanic)
+summary(titanic)
+```
+
+Note the missing values in the potentially important Age variable.  We will talk about dealing with missing data later.  
+Factor conversion. Several of our variables are categorical and should be converted to factors. We can during modeling via a recipe, but we'll do it now so we can look at appropriate visualizations.   
+```{r}
+titanic = titanic %>% mutate(Survived = as_factor(Survived)) %>% 
+  mutate(Survived = fct_recode(Survived, "No" = "0", "Yes" = "1" )) %>%
+  mutate(Pclass = as_factor(Pclass)) %>% mutate(Sex = as_factor(Sex))
+str(titanic)
+summary(titanic)
+```
+We will not use the PassengerId, Name, Ticket, Fare, Embarked, and Cabin variables. However, with some work these variables might contain useful information. 
+
+####Visuals  
+Passenger Class  
+```{r}
+ggplot(titanic, aes(x=Pclass, fill = Survived)) + geom_bar() + theme_bw()
+```
+Alternative (100% stacked)
+```{r}
+ggplot(titanic, aes(x=Pclass, fill = Survived)) + geom_bar(position="fill") + theme_bw()
+```
+
+Alternative (look at tabular data)
+```{r}
+t1 = table(titanic$Survived, titanic$Pclass) #create a table object
+prop.table(t1, margin = 2 ) #crosstab with proportions
+```
+Makes sense that passenger class predicts survival. Wealthier passengers had easier access to lifeboats.
+
+Gender  
+```{r}
+ggplot(titanic, aes(x=Sex, fill = Survived)) + geom_bar() + theme_bw()
+```
+This data supports the notion that women survived at a higher rate than men.  
+
+Age 
+```{r}
+ggplot(titanic, aes(x=Survived, y= Age)) + geom_boxplot() + theme_bw()
+```
+Age, on its own, does not seem to predict survival. There is little difference in the age distribution of survivors and those that did not survive.  
+
+Siblings/Spouses 
+```{r}
+ggplot(titanic, aes(x=SibSp, fill = Survived)) + geom_bar() + theme_bw()
+```
+
+Hard to tell much from the graph.  
+Alternative (look at tabular data)  
+```{r}
+t2 = table(titanic$Survived, titanic$SibSp) #create a table object
+prop.table(t2, margin = 2 ) #crosstab with proportions
+```
+Larger numbers of siblings + spouses seems to suggest less chance of survival, but the sample size for the larger numbers is pretty low.  
+
+Parents/Children
+```{r}
+ggplot(titanic, aes(x=Parch, fill = Survived)) + geom_bar() + theme_bw()
+```
+Similar to above, hard to tell much from the graph.  
+
+Alternative (look at tabular data)
+```{r}
+t3 = table(titanic$Survived, titanic$Parch) #create a table object
+prop.table(t3, margin = 2 ) #crosstab with proportions
+```
+Some decrease in survival rate as Parch increases, but stil dealing with small samples.
+
+Not applying training/testing splits or cross-validation at this point.  
+
+Let's build a logistic regression model with Pclass.  
+```{r}
+titanic_model = 
+  logistic_reg() %>% #note the use of logistic_reg
+  set_engine("glm") #standard logistic regression engine is glm
+
+titanic_recipe = recipe(Survived ~ Pclass, titanic) %>%
+  step_dummy(all_nominal(), -all_outcomes()) #exclude the response variable from being dummy converted  
+
+logreg_wf = workflow() %>%
+  add_recipe(titanic_recipe) %>% 
+  add_model(titanic_model)
+
+titanic_fit = fit(logreg_wf, titanic)
+```
+
+```{r}
+summary(titanic_fit$fit$fit$fit)
+```
+Pclass has three levels (1, 2, and 3) representing each of the three classes of passenger on the ship. Note the negative coefficients for Pclass2 and Pclass3. This suggests that probability of survival drops for those classes compared to first class (as we expect). The dropoff is more severe (larger coefficient) for Pclass3.  
+
+Note the AIC of this model (a measure of model quality) is 1089.1. We can use this value to compare this model to others. Smaller AIC is better.  
+
+Add gender.  
+```{R}
+titanic_model = 
+  logistic_reg() %>% #note the use of logistic_reg 
+  set_engine("glm") #standard logistic regression engine is glm
+
+titanic_recipe = recipe(Survived ~ Pclass + Sex, titanic) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+logreg_wf = workflow() %>%
+  add_recipe(titanic_recipe) %>% 
+  add_model(titanic_model)
+
+titanic_fit2 = fit(logreg_wf, titanic)
+```
+
+```{r}
+summary(titanic_fit2$fit$fit$fit)
+```
+R used female as the base level for the Sex factor. Sex is a significant variable. Being female improves your survival probability. The AIC of this model is less than for the first model, so this model is better.  
+
+Add Age (note how R handles the missing rows).  
+```{r}
+titanic_model = 
+  logistic_reg() %>% #note the use of logistic_reg 
+  set_engine("glm") #standard logistic regression engine is glm
+
+titanic_recipe = recipe(Survived ~ Pclass + Sex + Age, titanic) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+logreg_wf = workflow() %>%
+  add_recipe(titanic_recipe) %>% 
+  add_model(titanic_model)
+
+titanic_fit3 = fit(logreg_wf, titanic)
+```
+
+```{r}
+summary(titanic_fit3$fit$fit$fit)
+```
+Note the "177 observations deleted due to missingness" note near the bottom of the summary. R's behavior was to ignore the rows with missing Age values. 
+
+In this model, Age is significant and has a negative coefficient (older = less likely to survive). AIC of this model is better.  
+
+Predictions on sample passenger.  
+```{r}
+newdata = data.frame(Sex = "male", Pclass = "3", Age = 41)
+predict(titanic_fit3, newdata, type="prob")
+```
+
+Another passenger.  
+```{r}
+newdata = data.frame(Sex = "female", Pclass = "1", Age = 6)
+predict(titanic_fit3, newdata, type="prob")
+```
+
+One more.    
+```{r}
+newdata = data.frame(Sex = "male", Pclass = "2", Age = 26)
+predict(titanic_fit3, newdata, type="prob")
+```
+
+Let's build a model with all variables. 
+```{r}
+titanic_model = 
+  logistic_reg() %>% #note the use of logistic_reg and mode = "classification"
+  set_engine("glm") #standard logistic regression engine is glm
+
+titanic_recipe = recipe(Survived ~ Pclass + Sex + Age + SibSp + Parch, titanic) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+logreg_wf = workflow() %>%
+  add_recipe(titanic_recipe) %>% 
+  add_model(titanic_model)
+
+titanic_fit4 = fit(logreg_wf, titanic)
+```
+
+```{r}
+summary(titanic_fit4$fit$fit$fit)
+```
+
+Let's see what happens when apply lasso.  
+```{r}
+lasso_model = #give the model type a name 
+  logistic_reg(mixture = 1) %>% #mixture = 1 sets up Lasso
+  set_engine("glmnet") 
+
+titanic_recipe = recipe(Survived ~ Pclass + Sex + Age + SibSp + Parch, titanic) %>% 
+  step_dummy(all_nominal(), -all_outcomes()) %>% #makes sure factors are treated as categorical
+  step_naomit(Age) %>% #omit the missing data
+  step_center(all_predictors()) %>% #centers the predictors
+  step_scale(all_predictors()) #scales the predictors
+
+lasso_wflow =
+  workflow() %>% 
+  add_model(lasso_model) %>% 
+  add_recipe(titanic_recipe)
+
+lasso_fit = fit(lasso_wflow, titanic)
+```
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 0.011190) #show the coefficients for our selected lambda value
+```
+

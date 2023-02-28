@@ -1,0 +1,113 @@
+## Demonstrating Lasso and Model Validation on Credit Dataset
+
+Libraries  
+```{r}
+library(tidyverse) #tidyverse set of packages and functions
+library(tidymodels)
+library(glmnet) #for Lasso, ridge, and elastic net models 
+library(GGally) #create ggcorr and ggpairs plots
+library(ggcorrplot) #create an alternative to ggcorr plots
+library(MASS) #access to forward and backward selection algorithms
+library(leaps) #best subset selection
+library(lmtest) #for the dw test
+library(splines) #for nonlinear fitting
+library(car) #for calculating the variance inflation factor
+```
+
+Read-in dataset  
+```{r}
+ames = read_csv("AmesData.csv")
+```
+
+Select a subset of potential variables.  
+```{r}
+ames2 = ames %>% dplyr::select("SalePrice", "OverallQual", "GrLivArea", "GarageCars", "GarageArea", "TotalBsmtSF", "1stFlrSF", "FullBath", "YearBuilt", "YearRemodAdd", "TotRmsAbvGrd", "Neighborhood")
+```
+
+In this lecture we'll do a training/testing split and then apply k-fold cross-validation. We'll use the k-fold approach to try to choose a good value for lambda for a lasso regression model.  
+
+Split  
+```{r}
+set.seed(123)
+ames_split = initial_split(ames2, prop = 0.80, strata = SalePrice)
+train = training(ames_split)
+test = testing(ames_split)
+```
+
+Set-up the folds for k-fold. Here we'll use 10 folds (the standard). However, if you have an enormous dataset or are running a technique that is computationally-intensive, it can be advisable to reduce to 5 or 3 folds.  
+```{r}
+folds = vfold_cv(train, v = 10)
+```
+
+Set up a recipe as is usual with a few changes. In the model code, we add penalty = tune() to indicate that we will be trying to select the best lambda value. We also add code to define how many values of the lamdba parameter should be tried. Let's try 100. We also add a section of code to capture the model results across the various folds and penalty values. We also remove the code for the fit for now. This code will take a few moments to execute.  
+```{r}
+ames_recipe = recipe(SalePrice ~., train) %>% #add all variables via ~.
+  step_ns(OverallQual, deg_free = 4) %>% #add the spline transformation to the recipe
+  step_other(Neighborhood, threshold = 0.01) %>% #collapses small Neighborhoods into an "Other" group
+  step_dummy(all_nominal()) %>% #makes Neighborhood categorical
+  step_center(all_predictors()) %>% #centers the predictors
+  step_scale(all_predictors()) #scales the predictors
+  
+lasso_model = #give the model type a name 
+  linear_reg(penalty = tune(), mixture = 1) %>% #mixture = 1 sets up Lasso, 0 sets up Ridge
+  set_engine("glmnet") #specify the specify type of linear tool we want to use 
+
+#try different lambda values ranging from 0 to 10000 in increments of 100                        
+#you may need to tweak this range 
+lambda_grid = expand.grid(penalty = seq(0,10000,100)) #consider a sequence of values from 0 to 10000 by 100
+
+lasso_wflow =
+  workflow() %>% 
+  add_model(lasso_model) %>% 
+  add_recipe(ames_recipe)
+
+lasso_res = lasso_wflow %>% 
+  tune_grid(
+    resamples = folds, #new line
+    grid = lambda_grid
+  )
+```
+
+We can take a look at the performance metrics (R squared and RMSE) for the various penalties.  
+```{r}
+lasso_res %>%
+  collect_metrics()
+```
+
+We borrow some code from https://juliasilge.com/blog/lasso-the-office/ to see how our performance metrics change as we change the penalty value.  
+```{r}
+lasso_res %>%
+  collect_metrics() %>%
+  ggplot(aes(penalty, mean, color = .metric)) +
+  geom_errorbar(aes(
+    ymin = mean - std_err,
+    ymax = mean + std_err
+  ),
+  alpha = 0.5
+  ) +
+  geom_line(size = 1.5) +
+  facet_wrap(~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() +
+  theme(legend.position = "none")
+```
+Setting the penalty to a very small value is optimal.  
+
+What is the exact best value?  
+```{r}
+best_rsq = lasso_res %>%
+  select_best("rsq")
+best_rsq
+```
+
+Finish the model with the best penalty to maximize R squared
+```{r}
+final_lasso = lasso_wflow %>% finalize_workflow(best_rsq)
+```
+
+Shows the model performance on the testing set  
+```{r}
+last_fit(
+  final_lasso,
+  ames_split) %>%
+  collect_metrics()
+```

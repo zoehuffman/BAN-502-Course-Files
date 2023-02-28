@@ -1,0 +1,75 @@
+## Regression Trees
+
+Libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(rpart) #for classification trees
+library(rpart.plot) #for plotting trees
+library(RColorBrewer) #better visualization of classification trees
+library(rattle) #better visualization of classification trees
+library(caret)
+```
+
+Read-in dataset  
+```{r}
+credit = read_csv("CreditData-4.csv")
+```
+
+Split the data (training and testing)  
+```{r}
+set.seed(123)
+credit_split = initial_split(credit, prop = 0.7, strata = AnnualCharges) #70% in training
+train = training(credit_split)
+test = testing(credit_split)
+```
+
+Create regression tree  
+```{r}
+credit_recipe = recipe(AnnualCharges ~., train)
+
+tree_model = decision_tree() %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("regression") #notice different mode here for a regression tree
+
+credit_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(credit_recipe)
+
+credit_fit = fit(credit_wflow, train)
+```
+
+Plot the tree  
+```{r}
+tree = credit_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree)
+```
+
+Develop predictions on the training set
+```{r}
+train_preds = predict(credit_fit, train)
+head(train_preds) #see first six predictions to verify that predictions are in correct form 
+```
+Examine performance metrics on the training set.  
+```{r}
+credit_fit %>% predict(train) %>% bind_cols(train) %>% metrics(truth = AnnualCharges, estimate = .pred)
+```
+
+Develop predictions on the testing set
+```{r}
+test_preds = predict(credit_fit, test)
+head(test_preds) #verify that predictions are in correct form
+```
+
+Examine performance metrics on the testing set.  
+```{r}
+credit_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = AnnualCharges, estimate = .pred)
+```
+
+

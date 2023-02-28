@@ -1,0 +1,108 @@
+## Classification Tree (Another example)
+
+Libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(rpart) #for classification trees
+library(rpart.plot) #plotting trees
+library(RColorBrewer) #better visualization of classification trees
+library(rattle) #better visualization of classification trees
+library(caret) #for easy confusion matrix creation 
+```
+
+Load data from the CSData.csv file.  
+```{r}
+credit = read_csv("CSData (1).csv")
+```
+
+Structure and summary
+```{r}
+str(credit)
+summary(credit)
+```
+
+Factor conversion. Convert the response variable SeriousDlqin2yrs.
+```{r}
+credit = credit %>% mutate(SeriousDlqin2yrs = as_factor(SeriousDlqin2yrs)) %>% 
+  mutate(SeriousDlqin2yrs = fct_recode(SeriousDlqin2yrs, "No" = "0", "Yes" = "1" )) 
+
+str(credit)
+```
+
+Data cleaning (same as done in earlier lectures).  
+```{r}
+credit = credit %>% filter(RevolvingUtilizationOfUnsecuredLines < 2)
+credit = credit %>% filter(DebtRatio < 5)
+credit = credit %>% filter(MonthlyIncome < 20000) %>% drop_na()
+credit = credit %>% filter(NumberOfOpenCreditLinesAndLoans < 40)
+credit = credit %>% filter(NumberOfTimes90DaysLate < 10)
+credit = credit %>% filter(NumberRealEstateLoansOrLines < 10)
+credit = credit %>% filter(NumberOfDependents < 10)
+```
+
+Now we'll split the data.  
+```{r}
+set.seed(123) 
+credit_split = initial_split(credit, prop = 0.7, strata = SeriousDlqin2yrs) #70% in training
+train = training(credit_split)
+test = testing(credit_split)
+```
+
+Let's build a classification tree.  
+```{r}
+credit_recipe = recipe(SeriousDlqin2yrs  ~., train)
+
+tree_model = decision_tree() %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("classification")
+
+credit_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(credit_recipe)
+
+credit_fit = fit(credit_wflow, train)
+```
+
+```{r}
+#extract the tree's fit from the fit object
+tree = credit_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+#plot the tree
+fancyRpartPlot(tree)
+```
+
+Look at the "rpart" complexity parameter "cp".    
+```{r}
+credit_fit$fit$fit$fit$cptable
+```
+Look at performance of this simple tree.
+
+Predictions on training set  
+```{r}
+treepred = predict(credit_fit, train, type = "class")
+head(treepred)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred$.pred_class,train$SeriousDlqin2yrs,positive="Yes") #predictions first then actual
+```
+
+Predictions on testing set  
+```{r}
+treepred_test = predict(credit_fit, test, type = "class")
+head(treepred_test)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred_test$.pred_class,test$SeriousDlqin2yrs,positive="Yes") #predictions first then actual
+```
+
+
+
+

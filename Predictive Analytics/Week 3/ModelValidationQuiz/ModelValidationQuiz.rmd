@@ -1,0 +1,55 @@
+```{r}
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+```
+
+```{r}
+bike_cleaned_4 <- read_csv("bike_cleaned-4.csv")
+```
+
+```{r}
+bike_cleaned_4 = bike_cleaned_4 %>% mutate(dteday = mdy(dteday))
+bike_cleaned_4 = bike_cleaned_4 %>% mutate(hr = as_factor(hr))
+bike_cleaned_4 = bike_cleaned_4 %>% mutate_if(is.character, as_factor)
+```
+
+```{r}
+set.seed(1234)
+bike_split = initial_split(bike_cleaned_4, prop = 0.70, strata = count)
+train = training(bike_split)
+test = testing(bike_split)
+```
+
+
+```{r}
+bike_recipe = recipe(count ~ season + mnth + hr + holiday + weekday + temp + weathersit, train)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(bike_recipe)
+
+lm_fit = fit(lm_wflow, train)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+```{r}
+predict_train = lm_fit %>% predict(train) %>% bind_cols(train) %>% metrics(truth = count, estimate = .pred)
+```
+
+```{r}
+ggplot()
+```
+
+```{r}
+lm_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = count, estimate = .pred)
+```
+

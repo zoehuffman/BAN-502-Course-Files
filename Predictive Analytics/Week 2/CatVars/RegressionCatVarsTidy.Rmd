@@ -1,0 +1,100 @@
+## Regression with Categorical Variables
+
+Libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+```
+
+Read in the data
+```{r}
+college = read_csv("College.csv")
+glimpse(college)
+```
+
+We'll leave school as is (we do not actually use it in our modeling). We do use "Type" which is currently a character type variable. Let's use mutate to convert to a factor.  
+```{r}
+college = college %>% mutate(Type = as_factor(Type))
+str(college)
+```
+
+Visualize relationships and look at correlation (note: correlation is not calculated for non-quantitative variables like "School" and "Type"). The variable we will ultimately try predict is "GradPercent".   
+```{r}
+ggpairs(college, columns = c(2:7)) #exclude the 1st column which contains "School"
+```
+
+Closer look at "Type" and "GradPercent".  
+```{r}
+ggplot(college, aes(x=Type,y=GradPercent)) + geom_boxplot() + theme_bw()
+ggplot(college, aes(x=Type,y=GradPercent)) + geom_boxplot() + 
+  geom_jitter() + theme_bw()
+```
+
+Model - Type predicts GradPercent  
+```{r}
+grad_recipe = recipe(GradPercent ~ Type, college) %>%
+  step_dummy(Type)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(grad_recipe)
+
+lm_fit = fit(lm_wflow, college)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+84.120 - 1.787*Type_University
+
+Prediction by Type  
+```{r}
+predict(lm_fit, new_data = data.frame(Type = c("Lib Arts","University")))
+```
+
+An example with multiple levels in a categorical variable.  
+```{r}
+flower = iris #built-in dataset
+str(flower)
+```
+
+Visualize/correlate  
+```{r}
+ggpairs(flower)
+```
+
+Model  (Species to predict Sepal.Length)
+```{r}
+iris_recipe = recipe(Sepal.Length ~ Species, flower) %>%
+  step_dummy(Species)
+
+lm_model2 = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow2 = 
+  workflow() %>% 
+  add_model(lm_model2) %>% 
+  add_recipe(iris_recipe)
+
+lm_fit2 = fit(lm_wflow2, flower)
+```
+
+```{r}
+summary(lm_fit2$fit$fit$fit)
+```
+5.0060 + (0.93)(Versicolor) + (1.582)(Virginica)
+
+Predictions:   
+```{r}
+predict(lm_fit2, new_data = data.frame(Species = c("setosa","versicolor","virginica")))
+```
+Traditional linear regression diagnostics are less meaningful for categorical variables.  
+
+

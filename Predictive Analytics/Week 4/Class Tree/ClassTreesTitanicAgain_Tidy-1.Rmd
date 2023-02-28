@@ -1,0 +1,224 @@
+## Classification Tree Example
+
+Libraries  
+```{r,include = FALSE}
+library(titanic)
+library(tidyverse)
+library(tidymodels)
+library(mice) #package for imputation
+library(VIM) #visualizing missingness
+library(rpart) #for classification trees
+library(rpart.plot) #for plotting trees
+library(RColorBrewer) #better visualization of classification trees
+library(rattle) #better visualization of classification trees
+library(caret)
+```
+
+Load data    
+```{r}
+titanic = titanic::titanic_train
+```
+
+```{r}
+#prepare
+titanic = titanic %>% mutate(Survived = as_factor(Survived)) %>% 
+  mutate(Survived = fct_recode(Survived, "No" = "0", "Yes" = "1" )) %>%
+  mutate(Pclass = as_factor(Pclass)) %>% mutate(Sex = as_factor(Sex)) %>%
+  mutate(Embarked = as_factor(Embarked)) %>% 
+  mutate(Embarked = fct_recode(Embarked,"Unknown"="","Cherbourg"="C","Southampton"="S","Queenstown"="Q")) %>%
+  select(Survived, Pclass, Sex, Age, SibSp, Parch, Fare, Embarked)
+
+titanic = titanic %>% select(c("Survived","Pclass","Sex","Age","SibSp","Parch","Embarked"))
+
+#impute
+set.seed(1234)
+imp_age = mice(titanic, m=5, method='pmm', printFlag=FALSE)
+summary(imp_age)
+
+titanic_complete = complete(imp_age) 
+summary(titanic_complete)
+```
+
+Now we'll split the data.  
+```{r}
+set.seed(123) 
+titanic_split = initial_split(titanic_complete, prop = 0.7, strata = Survived) #70% in training
+train = training(titanic_split) 
+test = testing(titanic_split)
+```
+
+Let's build a classification tree.  
+```{r}
+titanic_recipe = recipe(Survived ~., train) %>%
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree() %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("classification")
+
+titanic_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(titanic_recipe)
+
+titanic_fit = fit(titanic_wflow, train)
+```
+
+```{r}
+tree = titanic_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree) 
+```
+```{r}
+fancyRpartPlot(tree, tweak=1.5) #tweak makes the tree a little easier to read
+```
+Look at the "rpart" complexity parameter "cp".    
+```{r}
+titanic_fit$fit$fit$fit$cptable
+```
+
+Create our folds  
+```{r}
+set.seed(234)
+folds = vfold_cv(train, v = 5)
+```
+
+
+```{r}
+titanic_recipe = recipe(Survived ~., train) %>%
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("classification")
+
+tree_grid = grid_regular(cost_complexity(),
+                          levels = 25) #try 25 sensible values for cp
+
+titanic_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(titanic_recipe)
+
+tree_res = 
+  titanic_wflow %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+    )
+
+tree_res
+```
+
+Borrowed code from: https://www.tidymodels.org/start/tuning/
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+```
+```{r}
+best_tree = tree_res %>%
+  select_best("accuracy")
+
+best_tree
+```
+
+```{r}
+final_wf = 
+  titanic_wflow %>% 
+  finalize_workflow(best_tree)
+```
+
+```{r}
+final_fit = fit(final_wf, train)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree, tweak = 1.5) 
+
+```
+Predictions on training set  
+```{r}
+treepred = predict(final_fit, train, type = "class")
+head(treepred)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred$.pred_class,train$Survived,positive="Yes") #predictions first then actual
+```
+
+Predictions on testing set  
+```{r}
+treepred_test = predict(final_fit, test, type = "class")
+head(treepred_test)
+```
+
+Caret confusion matrix and accuracy, etc. calcs  
+```{r}
+confusionMatrix(treepred_test$.pred_class,test$Survived,positive="Yes") #predictions first then actual
+```
+
+```{r}
+titanic_recipe = recipe(Survived ~., train) %>% 
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("classification")
+
+tree_grid = expand.grid(cost_complexity = seq(0.001,0.01,by=0.001))
+
+titanic_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(titanic_recipe)
+
+tree_res = 
+  titanic_wflow %>% 
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+    )
+
+tree_res
+```
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+```
+```{r}
+best_tree = tree_res %>%
+  select_best("accuracy")
+
+best_tree
+```
+
+```{r}
+final_wf = 
+  titanic_wflow %>% 
+  finalize_workflow(best_tree)
+```
+
+```{r}
+final_fit = fit(final_wf, train)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree, tweak = 1.5) 
+
+```

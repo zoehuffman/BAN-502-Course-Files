@@ -1,0 +1,58 @@
+## Demonstrating Train/Test Split for Model Validation on Credit Dataset
+
+Libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally) #for ggpairs function
+```
+
+Read-in dataset  
+```{r}
+credit = read_csv("CreditData (1).csv")
+```
+
+Split the data (training and testing). 80% of the data to training. Stratified the random split by the response variable "AnnualCharges". 
+```{r}
+set.seed(123)
+credit_split = initial_split(credit, prop = 0.80, strata = AnnualCharges)
+train = training(credit_split)
+test = testing(credit_split)
+```
+
+AFTER you split, then do visualization and modeling with the **training set**. NEVER build models on the testing set.  
+
+Our Y (response) variable in this dataset is "AnnualCharges".  Let's look at ggpairs plot for visualization and correlation.  
+```{r}
+ggpairs(train)
+```
+
+Model with best single variable (by correlation).  
+```{r}
+credit_recipe = recipe(AnnualCharges ~ AnnualIncome, train)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(credit_recipe)
+
+lm_fit = fit(lm_wflow, train)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+Let's assume (for the sake of time) that this model is our best model.  The R squared value for this model on the training set is around 0.31. Now we need to evaluate its performance on the test set. Typically, we will see performance degrade a bit. If we see severe degradation, we assume that may have overfit the training set.   
+
+See the results on the test set  
+```{r}
+lm_fit %>% predict(test) %>% bind_cols(test) %>% metrics(truth = AnnualCharges, estimate = .pred)
+```
+Performance on the test set is similar to that on the training set. This suggests that our model is not overfitting.  
+
+

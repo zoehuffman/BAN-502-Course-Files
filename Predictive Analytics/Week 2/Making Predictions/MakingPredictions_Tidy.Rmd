@@ -1,0 +1,57 @@
+## Making Predictions with Simple Linear Regression Model
+
+Needed libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+```
+
+Read-in the data. Before doing this make sure that you have placed the CreditData.csv file (downloadable from Canvas) in your project's working directory.  
+
+```{r}
+credit = read_csv("CreditData-1.csv")
+```
+
+Build a regression model with AnnualIncome to predict AnnualCharges.  
+```{r}
+credit_simple = recipe(AnnualCharges ~ AnnualIncome, credit)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(credit_simple)
+
+lm_fit = fit(lm_wflow, credit)
+```
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+Prediction for AnnualIncomes of 75 and 100?  
+```{r}
+#Manually
+3146.361 + 121.355*75
+3146.361 + 121.355*100
+
+#Using predict function
+testdata = data.frame(AnnualIncome = c(75,100))
+predict(lm_fit, new_data = testdata)
+```
+
+```{r}
+#Prediction intervals
+temp_var = predict(lm_fit$fit$fit$fit, interval = "prediction") #accessing the fit object with the three $fit
+new_df = cbind(credit, temp_var)
+
+ggplot(new_df, aes(x = AnnualIncome, y = AnnualCharges)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  geom_line(aes(y=lwr), color = "red", linetype = "dashed") +
+  geom_line(aes(y=upr), color = "red", linetype = "dashed") +
+  theme_bw() 
+```

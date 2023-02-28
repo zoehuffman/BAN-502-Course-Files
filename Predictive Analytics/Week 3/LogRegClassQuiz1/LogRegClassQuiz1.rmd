@@ -1,0 +1,166 @@
+```{r}
+library(tidymodels)
+library(tidyverse)
+library(e1071)
+library(ROCR)
+```
+
+```{r}
+parole <- read_csv("parole.csv")
+```
+
+```{r}
+parole = parole %>% mutate(violator = as.factor(violator))
+parole = parole %>% mutate(male = as.factor(male))
+parole = parole %>% mutate(race = as.factor(race))
+parole = parole %>% mutate(state = as.factor(state))
+parole = parole %>% mutate(crime = as.factor(crime))
+parole = parole %>% mutate(multiple.offenses = as.factor(multiple.offenses))
+```
+
+```{r}
+parole = parole %>% 
+  mutate(violator = fct_recode(violator, "No" = "0", "Yes" = "1" )) %>%
+mutate(male = fct_recode(male, "No" = "0", "Yes" = "1" )) %>%
+mutate(race = fct_recode(race, "otherwise" = "2", "white" = "1" )) %>%
+mutate(state = fct_recode(state, "Kentucky" = "2", "other" = "1", "Louisiana" = "3", "Virginia" = "4" )) %>%
+mutate(crime = fct_recode(crime, "larceny" = "2", "other crime" = "1", "drug regulated" = "3", "driving related" = "4")) %>%
+mutate(multiple.offenses = fct_recode(multiple.offenses, "No" = "0", "Yes" = "1" )) 
+```
+
+```{r}
+str(parole)
+summary(parole)
+```
+
+```{r}
+set.seed(12345) 
+parole_split = initial_split(parole, prop = 0.70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+```{r}
+levels(train$violator)
+train = train %>% mutate(violator = fct_relevel(violator, c("No","Yes")))
+levels(train$violator)
+```
+
+```{r}
+t1 = table(parole$violator,parole$male)
+prop.table(t1, margin = 2)
+```
+
+```{r}
+t1 = table(parole$violator,parole$state)
+prop.table(t1, margin = 2)
+```
+
+```{r}
+t1 = table(parole$violator,parole$max.sentence)
+prop.table(t1, margin = 2)
+```
+
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>% #note the use of logistic_reg and mode = "classification"
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_recipe = recipe(violator ~ state, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit$fit$fit$fit)
+```
+
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>% #note the use of logistic_reg and mode = "classification"
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_recipe = recipe(violator ~ state + multiple.offenses + race, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit$fit$fit$fit)
+```
+
+```{r}
+newdata = data.frame(state = "Louisiana", multiple.offenses = "Yes", race = "white")
+predict(parole_fit, newdata, type="prob")
+```
+
+```{r}
+predictions = predict(parole_fit, train, type="prob")[2] #develop predicted probabilities
+head(predictions)
+#Change this next line to the names of your predictions and the response variable in the training data frame
+ROCRpred = prediction(predictions,train$violator)
+
+###You shouldn't need to ever change the next two lines:
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.2015788)
+t1
+```
+
+```{r}
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+36/(36+18)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.2)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.3)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.4)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+

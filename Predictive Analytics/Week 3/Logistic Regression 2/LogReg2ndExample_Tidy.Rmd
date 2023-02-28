@@ -1,0 +1,209 @@
+## Logistic Regression Second Example
+
+Libraries  
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(glmnet) #for Lasso, ridge, and elastic net models 
+```
+
+Load data from the CSData.csv file.  
+```{r}
+credit = read_csv("CSData.csv")
+```
+
+Structure and summary
+```{r}
+str(credit)
+summary(credit)
+```
+
+Factor conversion. Convert and recode the response variable SeriousDlqin2yrs.
+```{r}
+credit = credit %>% mutate(SeriousDlqin2yrs = as_factor(SeriousDlqin2yrs)) %>% 
+  mutate(SeriousDlqin2yrs = fct_recode(SeriousDlqin2yrs, "No" = "0", "Yes" = "1" )) 
+
+str(credit)
+summary(credit)
+```
+
+There is significant opportunity in this dataset to get rid of unusual values and outliers.
+
+We'll do this before splitting. Look at distributions of variables.  
+```{r}
+ggplot(credit, aes(x=RevolvingUtilizationOfUnsecuredLines)) + geom_histogram()
+```
+
+There are some strange large values. Let's filter out and re-examine histogram.   
+```{r}
+credit = credit %>% filter(RevolvingUtilizationOfUnsecuredLines < 2)
+ggplot(credit, aes(x=RevolvingUtilizationOfUnsecuredLines)) + geom_histogram()
+```
+This looks much more reasonable.  
+
+```{r}
+ggplot(credit, aes(x=age)) + geom_histogram()
+```
+Age distribution seems reasonable. 
+
+```{r}
+ggplot(credit, aes(x=DebtRatio)) + geom_histogram()
+```
+
+Strange large value(s) let's filter out and re-examine histogram.   
+```{r}
+credit = credit %>% filter(DebtRatio < 5)
+ggplot(credit, aes(x=DebtRatio)) + geom_histogram()
+```
+
+```{r}
+ggplot(credit, aes(x=MonthlyIncome)) + geom_histogram()
+```
+Large value(s) let's filter out and re-examine histogram. Also will drop all rows with any NAs.  
+NOTE: You can also use "step_naomit" to remove NA (missing) values in your Tidymodels code.  
+```{r}
+credit = credit %>% filter(MonthlyIncome < 20000) %>% drop_na() 
+ggplot(credit, aes(x=MonthlyIncome)) + geom_histogram()
+```
+
+NumberOfOpenCreditLinesAndLoans
+```{r}
+ggplot(credit, aes(x=NumberOfOpenCreditLinesAndLoans)) + geom_bar()
+```
+
+Remove outliers
+```{r}
+credit = credit %>% filter(NumberOfOpenCreditLinesAndLoans < 40)
+```
+
+```{r}
+ggplot(credit, aes(x=NumberOfTimes90DaysLate)) + geom_bar()
+```
+
+```{r}
+credit = credit %>% filter(NumberOfTimes90DaysLate < 10)
+ggplot(credit, aes(x=NumberOfTimes90DaysLate)) + geom_bar()
+```
+
+```{r}
+ggplot(credit, aes(x=NumberRealEstateLoansOrLines)) + geom_bar()
+```
+
+```{r}
+credit = credit %>% filter(NumberRealEstateLoansOrLines < 10)
+ggplot(credit, aes(x=NumberRealEstateLoansOrLines)) + geom_bar()
+```
+
+```{r}
+ggplot(credit, aes(x=NumberOfDependents)) + geom_bar()
+```
+
+```{r}
+credit = credit %>% filter(NumberOfDependents < 10)
+ggplot(credit, aes(x=NumberOfDependents)) + geom_bar()
+```
+Now we'll split the data.  
+```{r}
+set.seed(123) 
+credit_split = initial_split(credit, prob = 0.80, strata = SeriousDlqin2yrs)
+train = training(credit_split)
+test = testing(credit_split)
+```
+
+Visualize using the training set (looking at relationship between SeriousDlqin2yrs and the other variables).  
+```{r}
+ggplot(train,aes(x=SeriousDlqin2yrs, y=RevolvingUtilizationOfUnsecuredLines)) + geom_boxplot() + 
+  theme_bw()
+```
+Utilization seems strongly linked with delinquency.  
+
+```{r}
+ggplot(train,aes(x=SeriousDlqin2yrs,y=age)) + geom_boxplot()
+```
+Younger people more likely to be delinquent.  
+
+```{r}
+ggplot(train,aes(x=SeriousDlqin2yrs,y=DebtRatio)) + geom_boxplot()
+```
+Higher debt ratio appears to contribute to delinquency. Hard to see with outliers.  
+
+```{r}
+ggplot(train,aes(x=SeriousDlqin2yrs,y=MonthlyIncome)) + geom_boxplot()
+```
+Higher income --> Less delinquent
+
+```{r}
+ggplot(train,aes(x=SeriousDlqin2yrs,y=NumberOfOpenCreditLinesAndLoans)) + geom_boxplot()
+```
+More lines/loans, perhaps less delinquent.
+
+```{r}
+ggplot(train,aes(x=NumberOfTimes90DaysLate, fill = SeriousDlqin2yrs)) + geom_bar()
+```
+Hard to tell, so look at table.  
+```{r}
+t1 = table(credit$SeriousDlqin2yrs,credit$NumberOfTimes90DaysLate)
+prop.table(t1, margin = 2)
+```
+More late payments, higher rate of delinquency.
+
+```{r}
+ggplot(train,aes(x=NumberRealEstateLoansOrLines, fill = SeriousDlqin2yrs)) + geom_bar()
+```
+
+```{r}
+t2 = table(credit$SeriousDlqin2yrs,credit$NumberRealEstateLoansOrLines)
+prop.table(t2, margin = 2)
+```
+Hard to see much significant difference.
+
+```{r}
+ggplot(train,aes(x=NumberOfDependents, fill = SeriousDlqin2yrs)) + geom_bar()
+```
+```{r}
+t3 = table(credit$SeriousDlqin2yrs,credit$NumberOfDependents)
+prop.table(t3, margin = 2)
+```
+No apparent significant difference.
+
+Let's build a model with revolving utilization.    
+```{r}
+credit_model = 
+  logistic_reg(mode = "classification") %>% #note the use of logistic_reg and mode = "classification"
+  set_engine("glm") #standard logistic regression engine is glm
+
+credit_recipe = recipe(SeriousDlqin2yrs ~ RevolvingUtilizationOfUnsecuredLines, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(credit_recipe) %>% 
+  add_model(credit_model)
+
+credit_fit = fit(logreg_wf, train)
+```
+
+```{r}
+summary(credit_fit$fit$fit$fit)
+```
+Note the AIC of this model (a measure of model quality) is 37742. We can use this value to compare this model to others.
+
+How would a model with all predictors fare?  
+```{r}
+credit_model = 
+  logistic_reg(mode = "classification") %>% #note the use of logistic_reg and mode = "classification"
+  set_engine("glm") #standard logistic regression engine is glm
+
+credit_recipe = recipe(SeriousDlqin2yrs ~., train)
+
+logreg_wf = workflow() %>%
+  add_recipe(credit_recipe) %>% 
+  add_model(credit_model)
+
+credit_fit2 = fit(logreg_wf, train)
+```
+
+```{r}
+options(scipen = 999)
+summary(credit_fit2$fit$fit$fit)
+options(scipen = 0)
+```
+All predictors are significant and coefficients make sense. AIC better than single variable model.  
